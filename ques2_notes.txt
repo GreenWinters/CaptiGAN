@@ -1,0 +1,76 @@
+
+
+Method 3: Hybrid Model (DCGAN + Diffusion Features) Trained from Scratch
+-----------------------------------------------------------------------
+# NOTE Done
+1. Prepare CIFAR-100 dataset:
+   a. Download and extract dataset.
+   b. Load train, test, and meta files.
+   c. Split train set into training and validation indices per class.
+   d. Preprocess images (normalize, reshape).
+
+# NOTE Done
+2. Train DCGAN on training images:
+   a. Define DCGAN architecture (generator & discriminator).
+   b. Train DCGAN using training images.
+   c. Save trained DCGAN models.
+
+# TODO Write
+3. Load diffusion model encoder (e.g., CLIP or VAE from Stable Diffusion):
+   a. Use pre-trained encoder or fine-tune on CIFAR-100 if needed.
+
+4. Design and train a custom captioning model (LSTM/Transformer):
+   a. DCGAN Encoder with Projection Head: Modify load_dcgan_discriminator to remove the final classification layer and add a trainable projection head (MLP or linear+activation) to map DCGAN features to the CLIP embedding dimension (512 for ViT-B/16).
+   b. CLIP Text Encoder: Use the CLIP text encoder to embed ground-truth captions. Freeze its weights.
+   c. LSTM Decoder: Implement an LSTM-based decoder that takes the projected image embedding and generates captions. Use cross-entropy loss for caption generation.
+   d. Contrastive Loss: Add a CLIP-style contrastive loss between the normalized image embedding and the normalized CLIP text embedding.
+   e. Training Pipeline: In the main block, set up the training loop to optimize the sum of cross-entropy and contrastive loss, using your train/val splits. Save the trained model to exp_dir.
+
+7. Evaluate caption quality:
+   a. Use BLEU, METEOR, or CIDEr metrics on validation and test sets.
+
+8. Save models and results for reproducibility.
+
+
+During training of your core Encoder-Decoder, enforce an additional contrastive loss 
+(similar to CLIP's loss) between the image features from your Encoder and the text features 
+from the CLIP Text Encoder (trained on the ground-truth captions). This forces the visual 
+encoder to produce features that are strongly aligned with descriptive text, which should 
+"guide" or "improve" the quality of the generated captions.
+
+Metrics: Standard image captioning metrics are required:
+-BLEU-N (e.g., BLEU-4): Measures n-gram overlap with the reference caption(s).
+-CIDEr: Measures consensus and is highly correlated with human judgment.
+-METEOR: Measures alignment, chunking, and stemming.
+-ROUGE-L: Measures longest common subsequence.
+-Procedure: Calculate these metrics on the held-out test set.
+
+Why Freeze the CLIP Text Encoder?
+The goal of your assignment is not to retrain CLIP, but to use its expertise to improve your DCGAN-based system. 
+Freezing the weights serves three main purposes:
+
+1. Leverage Universal Knowledge (Transfer Learning)
+CLIP was trained by OpenAI on 400 million image-text pairs to create a universal, robust, and highly semantic 
+shared embedding space. By freezing it, you are leveraging this massive, general knowledge and the high-quality text-image alignment it has already learned.
+
+The Idea: You want your DCGAN-based Image Encoder and its projection head to adapt and learn how to map CIFAR-100
+ images into CLIP's established, high-quality feature space. You don't want the text space to move around and 
+ potentially degrade its vast, pre-trained knowledge based on your small, limited CIFAR-100 dataset.
+
+2. Computational Efficiency
+CLIP models are large. Training a full model involves massive computational resources. By freezing the text encoder:
+
+You save VRAM/memory because the model doesn't need to store gradients for the CLIP parameters.
+
+You speed up training because the gradient calculation and parameter updates for the text encoder are skipped 
+entirely in the backward pass.
+
+3. Avoid Catastrophic Forgetting
+If you were to unfreeze the weights and fine-tune the entire CLIP model on the tiny CIFAR-100 dataset 
+(which only has simple, class-label-derived captions), the model would quickly overfit to your limited data 
+and forget the general language and visual semantics it learned from 400 million pairs. This is known as 
+catastrophic forgetting.
+
+The Best Strategy: Use the frozen, expert CLIP Text Encoder as a fixed target space. The only model components 
+that are allowed to change their weights are your DCGAN-based Image Encoder and your Captioning Decoder 
+(LSTM/Transformer), forcing them to align with CLIP's expertise.
